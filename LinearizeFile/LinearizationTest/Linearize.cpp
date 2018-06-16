@@ -14,7 +14,10 @@
 *	All rights reserved
 *
 *	6-11-18 Warwick: Added routines to read wnd write coefficients to binary files.
-*						Shift registers included.
+*			Shift registers included.
+*	6-12-18 Warwick: Converted input routine to fetch floats
+*	6-14-18 Boxborough: Modified for demo purposes - working version.
+*			Commented out getch();
 *----------------------------------------------------------------------------*/
 #include "stdafx.h"
 #include <stdio.h>
@@ -53,25 +56,25 @@ void __cdecl C_2p_nominal(double z[], double measuredTemperature[], double coeff
 	int n_cc);					
 
 #define MAXSAMPLES 33
-#define NUMBER_OF_TEST_SAMPLES 27
+#define NUMBER_OF_TEST_SAMPLES 15 // 27
 #define NUMBER_OF_COEFFICIENTS 12
 #define NUMBER_OF_DIVISION_STEPS 9
-#define NUMBER_OF_TEMP_DECIMAL_PLACES 1
-#define NUMBER_OF_Z_DECIMAL_PLACES 3
 #define NUMBER_OF_SHIFT_VALUES 3
 
-	long 	capRatio[MAXSAMPLES] 		= { 0x5353F7, 0x523D70, 0x51374B, 0x504189, 0x4F5C28, 0x4E76C8, 0x4D9168, 0x4CBC6A, 0x4C5A1C, 0x53126E, 0x51EB85, 0x50E560, 0x4FDF3B, 0x4EF9DB, 0x4E147A, 0x4D1EB8, 0x4C49BA, 0x4BE76C, 0x529FBE, 0x5178D4, 0x50624D, 0x4F4BC6, 0x4E5604, 0x4D6041, 0x4C6A7E, 0x4B851E, 0x4B126E };	
-	double	measuredTemperature[MAXSAMPLES] 	= { 15.6, 15.6, 15.6, 15.6, 15.6, 15.6, 15.6, 15.6, 15.6, 25.1, 25.1, 25.1, 25.1, 25.1, 25.1, 25.1, 25.1, 25.1, 39.7, 39.7, 39.7, 39.7, 39.7, 39.7, 39.7, 39.7, 39.7 };
-	double	z[MAXSAMPLES] 		= { 0.208, 0.309, 0.408, 0.507, 0.606, 0.704, 0.803, 0.901, 0.945, 0.208, 0.309, 0.408, 0.507, 0.606, 0.704, 0.803, 0.901, 0.945, 0.208, 0.309, 0.408, 0.507, 0.606,  0.704, 0.803, 0.901, 0.945 };	
-	
-// LinearizationTest.cpp : Defines the entry point for the console application.
+long 	capRatio[MAXSAMPLES];
+double	z[MAXSAMPLES] = {0.0, 25, 50, 75, 100, 0, 25, 50, 75, 100, 0, 25, 50, 75, 100};
+double	measuredTemperature[MAXSAMPLES]	= {23.0, 23.0, 23.0, 23.0, 23.0, -20.0, -20.0, -20.0, -20.0, -20.0, 59.7, 59.7, 59.7, 59.7, 59.7};
+double floCapRatio[NUMBER_OF_TEST_SAMPLES] = {1.105170, 1.125230, 1.148520, 1.176690, 1.212040, 1.105170, 1.125230, 1.148520, 1.176690, 1.212040, 1.105170, 1.125230, 1.148520, 1.176690, 1.212040};
+unsigned long 	divisionSteps[] = {25,28,26, 24,24,24, 24,24,24};
 
-BOOL loadInputDataFromBinaryFile(long *ptrCommand, long *ptrCapRatio, double *ptrTemperature, double *ptrZvalue);
+BOOL writeOutputDataToBinaryFile(unsigned long *ptrCommands, unsigned long *ptrCoefficients, unsigned long *ptrDivisionSteps, long *ptrCnShift);
+BOOL loadInputDataFromBinaryFile(unsigned long *ptrCommand, long *ptrCapRatio, double *ptrTemperature, double *ptrZvalue);
 BOOL CreateInputTestFile(long *ptrCommand, long *ptrCapRatio, double *ptrTemperature, double *ptrZvalue);
-BOOL writeOutputDataToBinaryFile(long *ptrCommands, double *ptrCoefficients, unsigned long *ptrFPP, unsigned long *ptrDivisionSteps, long *ptrCnShift);
 
-// int n_samples = 27;
-#define n_samples (int) arrCommand[INDEX_NUM_SAMPLES]
+bool writeCalDataToBinaryFile(long *ptrCommand, long *ptrCapRatio, double *ptrTemperature, double *ptrZvalue);
+
+bool convertCoefficientToHex(double decimalValue, double FPPvalue, unsigned long *ptrTwosComplementHex);
+unsigned long HEXcoefficients[NUMBER_OF_COEFFICIENTS];
 
 enum {
 	INDEX_VERSION = 0,
@@ -85,9 +88,6 @@ enum {
 	MAXCOMMANDS
 };
 
-
-
-// int _tmain(int argc, _TCHAR* argv[])
 int main()
 {
 // #define n_cn_shift 	3 
@@ -95,43 +95,45 @@ int main()
 #define C_int_fpp	26
 #define z_fpp		8
 #define inverse 	1
-	
-	long arrCommand[MAXCOMMANDS] = {1, 27, 0};
+		
+	unsigned long arrCommand[MAXCOMMANDS] = {1, NUMBER_OF_TEST_SAMPLES, 0}; 
 		
 	/* Outputs*/
-	double	coefficients[NUMBER_OF_COEFFICIENTS];
-	unsigned long 	cc_fpp[NUMBER_OF_COEFFICIENTS];
+	double	coefficients[NUMBER_OF_COEFFICIENTS] = {1508.0352, -6487.8037, 10622.436, -5851.0303, 0, 0, -0.00000047683716, 0.00000017881393, 0, -0.000000029802322, 0.000000029802322, -0.00000001071021}; 
+	unsigned long 	cc_fpp[NUMBER_OF_COEFFICIENTS] = {8, 10, 9, 10, 15, 18, 21, 24, 22, 25, 28, 31};
 	long 	ccx[NUMBER_OF_COEFFICIENTS];
 	double 	cci[NUMBER_OF_COEFFICIENTS];
 	unsigned long 	divisionSteps[NUMBER_OF_DIVISION_STEPS];
-	long 	cn_shift[NUMBER_OF_SHIFT_VALUES];
+	long 	cn_shift[NUMBER_OF_SHIFT_VALUES] = {0,0,0};
 	double	error_vs_z[MAXSAMPLES];
-
-
+		
 	/* ----------------------------------------- */
 
 	/* ------ Parameter for c_2p_nominal ------- */
 	double z_nominal[] 		= { 22.8, 73.6 };
 	double theta_nominal[]	= { 15.4, 39.7 };
 	#define n_samples_2P	(sizeof(z_nominal) / sizeof(z_nominal[0]))
-
-	/* Outputs*/
-	//int 	C_out_hex[n_samples_2P]	;
-	//double 	C_out[n_samples_2P]		;
 	int i;
 
-	loadInputDataFromBinaryFile (arrCommand, capRatio, measuredTemperature, z);
-	// CreateInputTestFile(arrCommand, capRatio, measuredTemperature, z);
-	
-	/* ----------------------------------------- */
-	
+	long n_samples = 15;
+	printf("WORKING V1.0:\n");
+	printf("Reading data from binary input file:");
+	loadInputDataFromBinaryFile (arrCommand, capRatio, measuredTemperature, z);		
+	n_samples = (long) arrCommand[INDEX_NUM_SAMPLES];
 
-		/* ----------------- Start ----------------- */
-	c_lin_coeff_dut (	capRatio, z, measuredTemperature, C_fpp, C_int_fpp, z_fpp,  inverse,	// input
+	printf("Number of input samples: %d\n", n_samples);
+	for (i = 0; i < n_samples; i++)	
+		printf("CRatio #%d: %08X, T = %f, Z = %f\n", i, capRatio[i], measuredTemperature[i], z[i]);	
+		
+	/* ----------------- Start ----------------- */
+	
+	c_lin_coeff_dut (capRatio, z, measuredTemperature, C_fpp, C_int_fpp, z_fpp,  inverse,	// input
 						coefficients, cc_fpp, ccx, cci, error_vs_z, divisionSteps, cn_shift,	// output
 						n_samples, NUMBER_OF_COEFFICIENTS, NUMBER_OF_DIVISION_STEPS, NUMBER_OF_SHIFT_VALUES);				// size of arrays (input)		
+	
 
-	writeOutputDataToBinaryFile(arrCommand, coefficients, cc_fpp, divisionSteps, cn_shift);
+	for (i = 0; i < NUMBER_OF_COEFFICIENTS; i++) convertCoefficientToHex(coefficients[i], cc_fpp[i], &HEXcoefficients[i]);			
+	writeOutputDataToBinaryFile(arrCommand, HEXcoefficients, divisionSteps, cn_shift);
 						
 	printf("Coefficients for single devices -- c_lin_coeff_dut\n");
 	printf("Calibration values coefficients (ascending / [0..11])\n");
@@ -157,61 +159,34 @@ int main()
 	{
 		printf("#%d %d\n", i, (int) cn_shift[i]);		
 	}
-	
-	// printf("\nPress any key to continue");
-	// getch();	
+		
+	printf("\n k00: %08X", HEXcoefficients[0]);
+	printf("\n k10: %08X", HEXcoefficients[1]);
+	printf("\n k20: %08X", HEXcoefficients[2]);
+	printf("\n k30: %08X", HEXcoefficients[3]); 
+
+	printf("\n k01: %08X", HEXcoefficients[4]);
+	printf("\n k11: %08X", HEXcoefficients[5]);
+	printf("\n k21: %08X", HEXcoefficients[6]);
+	printf("\n k31: %08X", HEXcoefficients[7]);
+
+	printf("\n k02: %08X", HEXcoefficients[8]);
+	printf("\n k12: %08X", HEXcoefficients[9]);
+	printf("\n k22: %08X", HEXcoefficients[10]);
+	printf("\n k32: %08X", HEXcoefficients[11]);
+
+	//printf("\nPress any key to continue");
+	//getch();	
 	
 	return 0;	/* return value main() */
 	
 } // EOF
 
 
-BOOL writeOutputDataToBinaryFile(long *ptrCommands, double *ptrCoefficients, unsigned long *ptrFPP, unsigned long *ptrDivisionSteps, long *ptrCnShift)
+BOOL loadInputDataFromBinaryFile(unsigned long *ptrCommand, long *ptrCapRatio, double *ptrTemperature, double *ptrZvalue)
 {
-	std::ofstream outFile;
-	double dblValue;
-	int i;
-
-	// CREATE OUTPUT FILE
-	outFile.open(OutputDataFileName, ios::out|ios::binary|ios::trunc);
-	if (!outFile.is_open()) return false;
-
-	// WRITE COMMAND HEADER TO FILE
-	for (i = 0; i < MAXCOMMANDS; i++)
-	{
-		dblValue = (double) ptrCommands[i];
-		outFile.write(reinterpret_cast<char *>(&dblValue), sizeof(dblValue));		
-	} 
-
-	// WRITE COEFFICIENTS TO FILE
-	for (i = 0; i < NUMBER_OF_COEFFICIENTS; i++)
-	{
-		dblValue = (double) ptrCoefficients[i];
-		outFile.write(reinterpret_cast<char *>(&dblValue), sizeof(dblValue));		
-	} 
-		
-	// WRITE FPP TO FILE
-	for (i = 0; i < NUMBER_OF_COEFFICIENTS; i++)
-	{
-		dblValue = (double) ptrFPP[i];
-		outFile.write(reinterpret_cast<char *>(&dblValue), sizeof(dblValue));		
-	} 
-	
-	// WRITE DIVISION STEPS TO FILE
-	for (i = 0; i < NUMBER_OF_DIVISION_STEPS; i++)
-	{
-		dblValue = (double) ptrDivisionSteps[i];
-		outFile.write(reinterpret_cast<char *>(&dblValue), sizeof(dblValue));		
-	} 
-
-	outFile.close();	
-	return true;
-}
-
-BOOL loadInputDataFromBinaryFile(long *ptrCommand, long *ptrCapRatio, double *ptrTemperature, double *ptrZvalue)
-{
-	std::ifstream inFile;	
-	long longValue;
+	std::ifstream inFile;		
+	double doubleValue;
 	int numberOfSamples;
 	int i;
 
@@ -222,8 +197,8 @@ BOOL loadInputDataFromBinaryFile(long *ptrCommand, long *ptrCapRatio, double *pt
 		// READ COMMAND HEADER FROM FILE
 		for (i = 0; i < MAXCOMMANDS; i++)
 		{ 
-			inFile.read(reinterpret_cast<char *>(&longValue), sizeof(longValue));			
-			ptrCommand[i] = longValue;
+			inFile.read(reinterpret_cast<char *>(&doubleValue), sizeof(doubleValue));			
+			ptrCommand[i] = (unsigned long) doubleValue;
 			if (inFile.eof()) 
 			{
 				inFile.close();
@@ -237,8 +212,8 @@ BOOL loadInputDataFromBinaryFile(long *ptrCommand, long *ptrCapRatio, double *pt
 		// READ MEASURED CAPACITANCE RATIOS FROM FILE
 		for (i = 0; i < numberOfSamples; i++)
 		{ 
-			inFile.read(reinterpret_cast<char *>(&longValue), sizeof(longValue));			
-			ptrCapRatio[i] = longValue;
+			inFile.read(reinterpret_cast<char *>(&doubleValue), sizeof(doubleValue));			
+			ptrCapRatio[i] = (long) doubleValue;
 			if (inFile.eof()) 
 			{
 				inFile.close();
@@ -249,8 +224,8 @@ BOOL loadInputDataFromBinaryFile(long *ptrCommand, long *ptrCapRatio, double *pt
 		// READ MEASURED TEMPERATURES FROM FILE
 		for (i = 0; i < numberOfSamples; i++)
 		{ 
-			inFile.read(reinterpret_cast<char *>(&longValue), sizeof(longValue));	
-			ptrTemperature[i] = ((double)longValue) / pow((double)10, (double)NUMBER_OF_TEMP_DECIMAL_PLACES);
+			inFile.read(reinterpret_cast<char *>(&doubleValue), sizeof(doubleValue));			
+			ptrTemperature[i] = doubleValue;
 			if (inFile.eof()) 
 			{
 				inFile.close();
@@ -261,8 +236,8 @@ BOOL loadInputDataFromBinaryFile(long *ptrCommand, long *ptrCapRatio, double *pt
 		// READ Z VALUES FROM FILE 
 		for (i = 0; i < numberOfSamples; i++)
 		{ 
-			inFile.read(reinterpret_cast<char *>(&longValue), sizeof(longValue));	
-			ptrZvalue[i] = ((double)longValue) / pow((double)10, (double)NUMBER_OF_Z_DECIMAL_PLACES);
+			inFile.read(reinterpret_cast<char *>(&doubleValue), sizeof(doubleValue));			
+			ptrZvalue[i] = doubleValue;
 			if (inFile.eof()) 
 			{
 				inFile.close();
@@ -274,46 +249,84 @@ BOOL loadInputDataFromBinaryFile(long *ptrCommand, long *ptrCapRatio, double *pt
 	return TRUE;
 }
 
-BOOL CreateInputTestFile(long *ptrCommand, long *ptrCapRatio, double *ptrTemperature, double *ptrZvalue)
+
+bool convertCoefficientToHex(double decimalValue, double FPPvalue, unsigned long *ptrTwosComplementHex)
+{
+	double actualValue;
+	bool negFlag = false;
+
+	if (ptrTwosComplementHex == NULL) return false;
+
+	if (decimalValue == 0)
+	{
+		ptrTwosComplementHex[0] = 0x00;
+		ptrTwosComplementHex[1] = 0x00;
+		ptrTwosComplementHex[2] = 0x00;
+		ptrTwosComplementHex[3] = 0x00;
+		return true;
+	}
+
+	double multiplier = pow ((double)2.0, (double)FPPvalue);	
+	actualValue = decimalValue * multiplier;
+
+	if (actualValue < 0)
+	{
+		actualValue = 0 - actualValue;
+		negFlag = true;
+	}
+
+	unsigned long hexValue;
+	
+	hexValue = (unsigned long) actualValue;
+	// If integer is negative, get two's complement:
+	if (negFlag)
+	{
+		hexValue = hexValue - 1;
+		hexValue = (~hexValue) & 0xFFFFFFFF;
+	}
+
+	*ptrTwosComplementHex = hexValue;
+	return true;
+}
+
+BOOL writeOutputDataToBinaryFile(unsigned long *ptrCommands, unsigned long *ptrCoefficients, unsigned long *ptrDivisionSteps, long *ptrCnShift)
 {
 	std::ofstream outFile;
-	long longValue;
+	unsigned long lngValue;
 	int i;
 
 	// CREATE OUTPUT FILE
-	outFile.open(InputDataFileName, ios::out|ios::binary|ios::trunc);
+	outFile.open(OutputDataFileName, ios::out|ios::binary|ios::trunc);
 	if (!outFile.is_open()) return false;
 
 	// WRITE COMMAND HEADER TO FILE
 	for (i = 0; i < MAXCOMMANDS; i++)
 	{
-		longValue = (long) ptrCommand[i];
-		outFile.write(reinterpret_cast<char *>(&longValue), sizeof(longValue));		
+		lngValue = ptrCommands[i];
+		outFile.write(reinterpret_cast<char *>(&lngValue), sizeof(lngValue));		
 	} 
 
-	// WRITE TEST CAPACITOR RATIOS TO FILE
-	for (i = 0; i < NUMBER_OF_TEST_SAMPLES; i++)
+	// WRITE COEFFICIENTS TO FILE
+	for (i = 0; i < NUMBER_OF_COEFFICIENTS; i++)
 	{
-		longValue = (long) ptrCapRatio[i];
-		outFile.write(reinterpret_cast<char *>(&longValue), sizeof(longValue));		
+		lngValue = ptrCoefficients[i];
+		outFile.write(reinterpret_cast<char *>(&lngValue), sizeof(lngValue));		
+	} 		
+	
+	// WRITE DIVISION STEPS TO FILE
+	for (i = 0; i < NUMBER_OF_DIVISION_STEPS; i++)
+	{
+		lngValue = ptrDivisionSteps[i];
+		outFile.write(reinterpret_cast<char *>(&lngValue), sizeof(lngValue));		
 	} 
 
-	// WRITE TEST TEMPERATURES TO FILE
-	for (i = 0; i < NUMBER_OF_TEST_SAMPLES; i++)
+	// WRITE CN SHIFTS TO FILE
+	for ( i = 0; i < NUMBER_OF_SHIFT_VALUES; i++ )
 	{
-		double dblTemperature = ptrTemperature[i];
-		longValue = (long) (dblTemperature * pow((double)10, (double)NUMBER_OF_TEMP_DECIMAL_PLACES));
-		outFile.write(reinterpret_cast<char *>(&longValue), sizeof(longValue));		
-	} 
-
-	// WRITE TEST Z VALUES TO FILE
-	for (i = 0; i < NUMBER_OF_TEST_SAMPLES; i++)
-	{
-		longValue = (long) (ptrZvalue[i] * pow((double)10, (double)NUMBER_OF_Z_DECIMAL_PLACES));
-		outFile.write(reinterpret_cast<char *>(&longValue), sizeof(longValue));		
-	} 
+		lngValue = (unsigned long) ptrCnShift[i];
+		outFile.write(reinterpret_cast<char *>(&lngValue), sizeof(lngValue));
+	}
 
 	outFile.close();	
 	return true;
 }
-
