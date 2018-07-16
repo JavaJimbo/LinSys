@@ -22,7 +22,10 @@
 *	7-09-18 Boxborough: fixed bug in convertCoefficientToHex()
 *	7-09-18 Boxborough: eliminated need for convertCoefficientToHex() - using ccx[] array of integer coefficeints instead.
 *   7-11-18 Warwick: Modified code to calculate coefficeints for either pressure or temperature.
+*	7-15-18 Warwick: Created routines to test polynomial with coefficients: calculateZPressure(), writeCRatiosToBinaryFile(), writeCalDataToBinaryFile()
+*	7-16-19 Warwick: Added routine to store coefficients for graphing: writeCoefficientsToBinaryFile()
 *----------------------------------------------------------------------------*/
+
 #include "stdafx.h"
 #include <stdio.h>
 #include <conio.h>
@@ -45,6 +48,7 @@ using std::ios;
 
 CString InputDataFileName = "C:\\Temp\\CalDataInputFile";
 CString OutputDataFileName = "C:\\Temp\\CalDataOutputFile";
+CString OutputCoefficientFileName = "C:\\Temp\\CoefficientOutputFile";
 
 #define printPrgHeader	printf("\n--------------------------------------------------------"); \
 						printf("\n-------------- PCap02plus Linearization ----------------"); \
@@ -71,17 +75,25 @@ void __cdecl C_2p_nominal(double z[], double measuredTemperature[], double coeff
 #define NUMBER_OF_TEMPERATURE_DIVISION_STEPS 3
 #define NUMBER_OF_TEMPERATURE_SHIFT_VALUES 0
 
-long 	arrRatio[MAXSAMPLES];
-double	z[MAXSAMPLES] = {0.0, 25, 50, 75, 100, 0, 25, 50, 75, 100, 0, 25, 50, 75, 100};
-double	measuredTemperature[MAXSAMPLES]	= {23.0, 23.0, 23.0, 23.0, 23.0, -20.0, -20.0, -20.0, -20.0, -20.0, 59.7, 59.7, 59.7, 59.7, 59.7};
+//long 	arrRatio[MAXSAMPLES];
+//double	z[MAXSAMPLES] = {0.0, 25, 50, 75, 100, 0, 25, 50, 75, 100, 0, 25, 50, 75, 100};
+//double	measuredTemperature[MAXSAMPLES]	= {23.0, 23.0, 23.0, 23.0, 23.0, -20.0, -20.0, -20.0, -20.0, -20.0, 59.7, 59.7, 59.7, 59.7, 59.7};
+
+long 	arrRatio[MAXSAMPLES] = { 0x5353F7, 0x523D70, 0x51374B, 0x504189, 0x4F5C28, 0x4E76C8, 0x4D9168, 0x4CBC6A, 0x4C5A1C, 0x53126E, 0x51EB85, 0x50E560, 0x4FDF3B, 0x4EF9DB, 0x4E147A, 0x4D1EB8, 0x4C49BA, 0x4BE76C, 0x529FBE, 0x5178D4, 0x50624D, 0x4F4BC6, 0x4E5604, 0x4D6041, 0x4C6A7E, 0x4B851E, 0x4B126E };	
+double	measuredTemperature[MAXSAMPLES]	= { 15.6, 15.6, 15.6, 15.6, 15.6, 15.6, 15.6, 15.6, 15.6, 25.1, 25.1, 25.1, 25.1, 25.1, 25.1, 25.1, 25.1, 25.1, 39.7, 39.7, 39.7, 39.7, 39.7, 39.7, 39.7, 39.7, 39.7 };
+double	z[MAXSAMPLES] = { 0.208, 0.309, 0.408, 0.507, 0.606, 0.704, 0.803, 0.901, 0.945, 0.208, 0.309, 0.408, 0.507, 0.606, 0.704, 0.803, 0.901, 0.945, 0.208, 0.309, 0.408, 0.507, 0.606,  0.704, 0.803, 0.901, 0.945 };	
+
 double floCapRatio[NUMBER_OF_TEST_SAMPLES] = {1.105170, 1.125230, 1.148520, 1.176690, 1.212040, 1.105170, 1.125230, 1.148520, 1.176690, 1.212040, 1.105170, 1.125230, 1.148520, 1.176690, 1.212040};
 unsigned long 	divisionSteps[] = {25,28,26, 24,24,24, 24,24,24};
 
 BOOL writeOutputDataToBinaryFile(unsigned long *ptrCommands, unsigned long *ptrCoefficients, unsigned long *ptrDivisionSteps, long *ptrCnShift);
 BOOL loadInputDataFromBinaryFile(unsigned long *ptrCommand, long *ptrCapRatio, double *ptrTemperature, double *ptrZvalue);
-BOOL CreateInputTestFile(long *ptrCommand, long *ptrRatio, double *ptrTemperature, double *ptrZvalue);
+// BOOL CreateInputTestFile(long *ptrCommand, long *ptrRatio, double *ptrTemperature, double *ptrZvalue);
+BOOL writeCoefficientsToBinaryFile(double *pCoefficients);
 
-bool writeCalDataToBinaryFile(long *ptrCommand, long *ptrCapRatio, double *ptrTemperature, double *ptrZvalue);
+// double calculateZPressure (long CRatio, double t, double *pCoefficients);
+// BOOL writeCRatiosToBinaryFile(long *pCRatio, double *Z, double *Zcalculated);
+// bool writeCalDataToBinaryFile(long *ptrCommand, long *ptrCapRatio, double *ptrTemperature, double *ptrZvalue);
 
 enum {
 	INDEX_VERSION = 0,
@@ -125,10 +137,11 @@ int main()
 	long n_samples = 15;
 	
 	printf("WORKING V1.0:\n");
-	printf("Reading data from binary input file:");
+	printf("Reading data from binary input file:");	
 
 	loadInputDataFromBinaryFile (arrCommand, arrRatio, measuredTemperature, z);		
 	n_samples = (long) arrCommand[INDEX_NUM_SAMPLES];
+	// arrCommand[INDEX_CALIBRATION_SELECT] = CALCULATE_PRESSURE_COEFFICIENTS;
 
 	if (arrCommand[INDEX_CALIBRATION_SELECT] == CALCULATE_PRESSURE_COEFFICIENTS)
 	{
@@ -142,7 +155,11 @@ int main()
 						coefficients, cc_fpp, ccx, cci, error_vs_z, divisionSteps, cn_shift,	// output
 						n_samples, NUMBER_OF_PRESSURE_COEFFICIENTS, NUMBER_OF_PRESSURE_DIVISION_STEPS, NUMBER_OF_PRESSURE_SHIFT_VALUES);// size of arrays (input)			
 		
+		// double Zcalculated[MAXSAMPLES];
+		// for (i = 0; i < 12; i++) Zcalculated[i] = calculateZPressure (arrRatio[i], 25.1, coefficients);
+		// writeCRatiosToBinaryFile(arrRatio, z, Zcalculated);
 		writeOutputDataToBinaryFile(arrCommand, (unsigned long *) ccx, divisionSteps, cn_shift);
+		writeCoefficientsToBinaryFile(coefficients);
 						
 		printf("Coefficients for single devices -- c_lin_coeff_dut\n");
 		printf("Calibration coefficients (ascending / [0..11])\n");
@@ -349,3 +366,110 @@ BOOL writeOutputDataToBinaryFile(unsigned long *ptrCommands, unsigned long *ptrC
 	outFile.close();	
 	return true;
 }
+
+
+#define NUMBER_OF_COEFFICENTS 12
+BOOL writeCoefficientsToBinaryFile(double *pCoefficients)
+{
+	std::ofstream outFile;
+	double dblValue;
+	unsigned int i;
+
+	// CREATE OUTPUT FILE
+	outFile.open(OutputCoefficientFileName, ios::out|ios::binary|ios::trunc);
+	if (!outFile.is_open()) return false;
+
+	// WRITE COEFFICIENTS TO FILE
+	for (i = 0; i < NUMBER_OF_COEFFICENTS; i++)
+	{
+		dblValue = pCoefficients[i];
+		outFile.write(reinterpret_cast<char *>(&dblValue), sizeof(dblValue));		
+	} 		
+	
+	outFile.close();	
+	return true;
+}
+
+/*
+#define NUMBER_OF_SAMPLES 9
+BOOL writeCRatiosToBinaryFile(long *pCRatio, double *Z, double *Zcalculated)
+{	
+	CString fileName = "CRatios.txt";
+	CString strHexLine;
+	std::ofstream myfile;
+	unsigned int i;
+	long offset;
+
+	// CREATE OUTPUT FILE
+	myfile.open(fileName);
+
+	offset = pCRatio[0];
+	for (i = 1; i < NUMBER_OF_SAMPLES; i++)
+	{
+		if (pCRatio[i] < offset)
+			offset = pCRatio[i];
+	}
+
+	// offset = offset & 0x100000;
+
+	// WRITE COEFFICIENTS TO FILE
+	for (i = 0; i < NUMBER_OF_SAMPLES; i++)
+	{
+		strHexLine.Format("%0.6X, %d, %0.1f, %0.1f\r\n", pCRatio[i], (pCRatio[i] - offset), (Z[i] * 100.0), (Zcalculated[i] * 100.0));
+		myfile << strHexLine;
+	} 		
+	
+	myfile.close();	
+	return true;
+}
+
+
+// This routine calculates the percent of ful scale pressure, or Z value,
+// using the linearization polynomial: 
+//  Z = (k3 * C^3) + (k2 * C^2) + (k1 * C) + k0
+//
+// The K values are corrected for temperature changes using the formulas:
+//	k3 = (cc32 * t^2) + (cc31 * t) + cc30
+//	k2 = (cc22 * t^2) + (cc21 * t) + cc20
+//	k1 = (cc12 * t^2) + (cc11 * t) + cc10
+//	k0 = (cc02 * t^2) + (cc01 * t) + cc00
+//
+//  Function inputs: 
+//		CRatio - measured value of PCap capacitor ratio as a long integer
+//		t - measured temp in Celsius
+//		pCoefficients - the array of calculated polynomial coefficients
+//
+//  Returns: Result Z of polynomial
+double calculateZPressure (long lngCRatio, double t, double *pCoefficients)
+{
+	double k3, k2, k1, k0;
+	double cc00, cc10, cc20, cc30, cc01, cc11, cc21, cc31, cc02, cc12, cc22, cc32;
+	double Zresult;
+	double CRatio = 1.0 / ((double) lngCRatio / (double) 4194304);	// To use the measured C Ratio value in the polynomial, 
+																	// divide by 2^22 (4194304) and invert result
+																	// to get inverted C Ratio.
+
+	if (pCoefficients == NULL) return 0;
+
+	cc00 = pCoefficients[0];
+	cc10 = pCoefficients[1];
+	cc20 = pCoefficients[2];
+	cc30 = pCoefficients[3];
+	cc01 = pCoefficients[4];
+	cc11 = pCoefficients[5];
+	cc21 = pCoefficients[6];
+	cc31 = pCoefficients[7];
+	cc02 = pCoefficients[8];
+	cc12 = pCoefficients[9];
+	cc22 = pCoefficients[10];
+	cc32 = pCoefficients[11];
+
+	k3 = (cc32 * t * t) + (cc31 * t) + cc30;
+	k2 = (cc22 * t * t) + (cc21 * t) + cc20;
+	k1 = (cc12 * t * t) + (cc11 * t) + cc10;
+	k0 = (cc02 * t * t) + (cc01 * t) + cc00;
+
+	Zresult = (k3 * CRatio * CRatio * CRatio) + (k2 * CRatio * CRatio) + (k1 * CRatio) + k0;
+	return Zresult;
+}
+*/
